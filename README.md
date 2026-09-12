@@ -1,56 +1,79 @@
-# Word Hunt
+# Word Hunt: Mystery Dumplings
 
-A minimal, stable **React Native + Expo (SDK 57)** foundation for the Word Hunt
-mobile game. **Android-first**, TypeScript, and [Expo Router](https://docs.expo.dev/router/introduction/).
+A mobile **word-search puzzle game** built with React Native + Expo. Solve
+puzzles to earn a **Mystery Dumpling** reward, then unbox and collect original
+dumpling characters across seven rarity tiers. Fully playable **offline**.
 
-> This repository is the clean environment foundation only. The game itself
-> (categories, puzzles, scoring, dumplings, etc.) is implemented in a later phase.
+- **Package ID:** `com.paras.wordhunt` · **Version:** 2.0
+- **Primary target:** Android (iOS + web also supported)
 
-## Requirements
+## Core loop
 
-- Node.js 20 LTS or newer (validated on Node 22 LTS)
-- npm (this project uses **npm** exclusively — do not use Yarn/pnpm/Bun)
+```
+HOME → CATEGORY → MODE → SOLVE PUZZLE → UNBOX DUMPLING → DISCOVER → COLLECT → PLAY AGAIN
+```
+
+The word-search puzzle is the primary game; the dumpling unboxing is the reward
+layer and the collection is long-term progression.
+
+## Features
+
+- 15 categories, 8×8 / 10×10 / 12×12 grids, words placed in all 8 directions.
+- Drag-to-select word finding (react-native-gesture-handler).
+- Classic (count-up) and Time (2:00 countdown, time bonus) modes.
+- Bonus words (600+ common word dictionary), scoring, 3 hints/puzzle (+ optional
+  rewarded-ad hints), coins, and level-unlock progression.
+- A 12-state Mystery Dumpling unboxing sequence with an idempotent, crash-safe
+  reward transaction and app-restart recovery.
+- 40 original dumplings across COMMON → SECRET rarities with a persistent
+  collection screen.
+- AdMob banner / interstitial (frequency-capped) / rewarded ads — never shown
+  during the reward sequence. Ads degrade gracefully offline / on web.
+- Sound effects via `expo-audio`; persistence via AsyncStorage.
+
+## Tech stack
+
+Expo SDK 57 · React Native 0.86 · React 19 · TypeScript · Expo Router ·
+react-native-gesture-handler · expo-audio · react-native-google-mobile-ads ·
+@react-native-async-storage/async-storage.
 
 ## Getting started
 
 ```bash
-npm ci          # install exact, reproducible dependencies from package-lock.json
-npm run start   # start the Expo dev server (press a=Android, w=web)
-npm run android # run on Android (primary target)
-npm run web     # run in the browser
+npm ci
+npm run start      # a = Android, w = web
+npm run android
 ```
 
-## Quality checks
+## Checks
 
 ```bash
 npm run typecheck   # tsc --noEmit
 npm run lint        # eslint .
-npx expo-doctor     # validate Expo project config
+npx expo-doctor
 ```
 
-## Structure
+## Project structure
 
-```text
-word-hunt/
-├── app/            # Expo Router routes
-│   ├── _layout.tsx # root Stack layout
-│   └── index.tsx   # home screen
-├── assets/         # app icons / images
-├── components/     # (added during implementation)
-├── constants/      # (added during implementation)
-├── data/           # (added during implementation)
-├── hooks/          # (added during implementation)
-├── lib/            # (added during implementation)
-├── types/          # (added during implementation)
-├── utils/          # (added during implementation)
-├── app.json
-├── babel.config.js
-├── metro.config.js
-├── tsconfig.json
-├── package.json
-└── package-lock.json
+```
+app/          Expo Router screens (home, category, mode, game, unboxing, results, collection)
+components/    Reusable UI + original Dumpling renderer + banner slot
+constants/     Theme, highlight colors, rarity config, AdMob config
+data/          Categories, dumplings, bonus-word dictionary
+hooks/         PlayerProvider (coins, levels, collection, reward transaction)
+lib/           Puzzle generation, word-search, storage, rewards, ads, sound
+assets/        Icons + generated sound effects
+backend/       Minimal NestJS health-check service (GET /health)
 ```
 
-The `components/`, `constants/`, `data/`, `hooks/`, `lib/`, `types/`, and
-`utils/` directories are intentionally empty (kept via `.gitkeep`) and will be
-populated when the game is implemented.
+## Backend
+
+The game is fully offline. A minimal NestJS service (`backend/`) exposes only
+`GET /health → { "status": "ok" }`. The app never depends on it. See
+`backend/README.md`.
+
+## AdMob
+
+Real AdMob IDs are configured in `constants/ads.ts` and wired via the
+`react-native-google-mobile-ads` config plugin in `app.json` (which injects the
+`APPLICATION_ID` meta-data into `AndroidManifest.xml` at prebuild).
