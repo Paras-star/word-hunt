@@ -1,7 +1,16 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BannerSlot } from '@/components/BannerSlot';
 import { CoinPill } from '@/components/CoinPill';
@@ -38,7 +47,7 @@ export default function GameScreen() {
   const [hintsLeft, setHintsLeft] = useState(START_HINTS);
   const [hintCells, setHintCells] = useState<GridPosition[]>([]);
   const [selection, setSelection] = useState<GridPosition[]>([]);
-  const [gridWidth, setGridWidth] = useState(0);
+  const [gridArea, setGridArea] = useState({ w: 0, h: 0 });
   const [loadingAd, setLoadingAd] = useState(false);
 
   const hintAnim = useRef(new Animated.Value(0)).current;
@@ -47,7 +56,17 @@ export default function GameScreen() {
   const completed = useRef(false);
 
   const size = puzzle?.size ?? 8;
-  const cellSize = gridWidth > 0 ? gridWidth / size : 0;
+
+  // Fit the (square) board into the leftover playable area, responsive to BOTH
+  // width and height. `gridArea` is the measured flex region between the target
+  // word list and the bottom controls, so the board never clips regardless of
+  // how much space the surrounding UI takes.
+  const { width: winW, height: winH } = useWindowDimensions();
+  const fallbackArea = Math.min(winW - 24, winH * 0.5);
+  const rawBoard = gridArea.w > 0 ? Math.min(gridArea.w, gridArea.h) : fallbackArea;
+  const boardSize = Math.max(160, Math.min(Math.floor(rawBoard - 6), 560));
+  const cellSize = boardSize / size;
+  const letterSize = Math.max(11, Math.min(cellSize * 0.46, 34));
   const timeLeft = Math.max(0, TIME_LIMIT - elapsed);
 
   // Pause ambient music during focused puzzle solving.
@@ -252,22 +271,24 @@ export default function GameScreen() {
   const timeWarn = mode === 'time' && timeLeft < 30;
   const timerLabel =
     mode === 'time' ? formatTime(timeLeft) : formatTime(elapsed);
+  const foundCount = Object.keys(foundWords).length;
+  const hintDisabled = hintsLeft === 0 || wordsRemaining.length === 0;
 
   return (
-    <View style={styles.root}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <View style={styles.container}>
-        {/* Top bar */}
+        {/* Top bar: category / mode */}
         <View style={styles.topBar}>
           <Pressable onPress={() => router.replace('/category')} hitSlop={12}>
             <Text style={styles.backText}>‹ Quit</Text>
           </Pressable>
-          <Text style={styles.catTitle}>
-            {category.emoji} {category.name}
+          <Text style={styles.catTitle} numberOfLines={1}>
+            {category.emoji} {category.name} · {mode === 'time' ? 'Time' : 'Classic'}
           </Text>
           <CoinPill coins={coins} />
         </View>
 
-        {/* Stats row */}
+        {/* Stats row: score / timer / hint */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>SCORE</Text>
@@ -277,73 +298,103 @@ export default function GameScreen() {
             <Text style={[styles.timerText, timeWarn && styles.timerTextWarn]}>{timerLabel}</Text>
           </View>
           <Pressable
-            style={[styles.hintBtn, (hintsLeft === 0 || wordsRemaining.length === 0) && styles.hintBtnDisabled]}
+            style={[styles.hintBtn, hintDisabled && styles.hintBtnDisabled]}
             onPress={useHint}
-            disabled={hintsLeft === 0 || wordsRemaining.length === 0}
+            disabled={hintDisabled}
+            hitSlop={8}
           >
             <Text style={styles.hintGlyph}>💡</Text>
-            {hintsLeft > 0 && (
-              <View style={styles.hintBadge}>
-                <Text style={styles.hintBadgeText}>{hintsLeft}</Text>
-              </View>
-            )}
+            <Text style={styles.hintLabel}>HINT</Text>
+            <View style={styles.hintCount}>
+              <Text style={styles.hintCountText}>{hintsLeft}</Text>
+            </View>
           </Pressable>
         </View>
 
-        {/* Grid */}
-        <GestureDetector gesture={pan}>
-          <View
-            style={styles.gridWrap}
-            onLayout={(e) => setGridWidth(e.nativeEvent.layout.width)}
+        {/* Target word list */}
+        <View style={styles.targetPanel}>
+          <View style={styles.targetHeaderRow}>
+            <Text style={styles.targetHeader}>FIND THESE WORDS</Text>
+            <Text style={styles.targetProgress}>
+              {foundCount}/{puzzle.words.length}
+              {bonusWords.size > 0 ? ` · +${bonusWords.size} bonus` : ''}
+            </Text>
+          </View>
+          <ScrollView
+            style={styles.targetScroll}
+            contentContainerStyle={styles.targetContent}
+            showsVerticalScrollIndicator={false}
           >
-            {puzzle.grid.map((row, r) => (
-              <View key={r} style={styles.gridRow}>
-                {row.map((letter, c) => {
-                  const key = `${r},${c}`;
-                  const foundColor = foundCellColors[key];
-                  const isSel = selectionSet.has(key);
-                  const isHint = hintSet.has(key);
-                  return (
-                    <View
-                      key={key}
-                      style={[
-                        styles.cell,
-                        { width: cellSize, height: cellSize },
-                        foundColor ? { backgroundColor: toCellBg(foundColor) } : null,
-                        isSel ? styles.cellSelected : null,
-                      ]}
-                    >
-                      {isHint && (
-                        <Animated.View
-                          style={[
-                            StyleSheet.absoluteFill,
-                            styles.hintOverlay,
-                            { opacity: hintAnim },
-                          ]}
-                        />
-                      )}
-                      <Text
+            {puzzle.words.map((w) => {
+              const found = foundWords[w] !== undefined;
+              const color = found ? highlightColorAt(foundWords[w]) : undefined;
+              return (
+                <View
+                  key={w}
+                  style={[styles.wordChip, found && { backgroundColor: toCellBg(color!), borderColor: 'transparent' }]}
+                >
+                  {found && <Text style={styles.wordCheck}>✓ </Text>}
+                  <Text style={[styles.wordChipText, found && styles.wordChipFound]}>{w}</Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Word-search grid — sized to the leftover area (never clipped) */}
+        <View
+          style={styles.gridArea}
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            setGridArea((prev) =>
+              Math.abs(prev.w - width) < 1 && Math.abs(prev.h - height) < 1
+                ? prev
+                : { w: width, h: height },
+            );
+          }}
+        >
+          <GestureDetector gesture={pan}>
+            <View style={[styles.grid, { width: boardSize, height: boardSize }]}>
+              {puzzle.grid.map((row, r) => (
+                <View key={r} style={styles.gridRow}>
+                  {row.map((letter, c) => {
+                    const key = `${r},${c}`;
+                    const foundColor = foundCellColors[key];
+                    const isSel = selectionSet.has(key);
+                    const isHint = hintSet.has(key);
+                    return (
+                      <View
+                        key={key}
                         style={[
-                          styles.cellText,
-                          { fontSize: Math.max(11, cellSize * 0.42) },
-                          isSel && styles.cellTextSelected,
+                          styles.cell,
+                          { width: cellSize, height: cellSize },
+                          foundColor ? { backgroundColor: toCellBg(foundColor) } : null,
+                          isSel ? styles.cellSelected : null,
                         ]}
                       >
-                        {letter}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            ))}
-          </View>
-        </GestureDetector>
+                        {isHint && (
+                          <Animated.View
+                            style={[StyleSheet.absoluteFill, styles.hintOverlay, { opacity: hintAnim }]}
+                          />
+                        )}
+                        <Text
+                          style={[styles.cellText, { fontSize: letterSize }, isSel && styles.cellTextSelected]}
+                        >
+                          {letter}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          </GestureDetector>
+        </View>
 
-        {/* Progress + hint-ad */}
-        <View style={styles.progressRow}>
+        {/* Secondary controls */}
+        <View style={styles.secondaryRow}>
           <Text style={styles.progressText}>
-            {Object.keys(foundWords).length}/{puzzle.words.length} words
-            {bonusWords.size > 0 ? `  ·  ${bonusWords.size} bonus` : ''}
+            {foundCount === puzzle.words.length ? 'All words found!' : `${wordsRemaining.length} to go`}
           </Text>
           {hintsLeft === 0 && adsSupported() && (
             <Pressable onPress={watchAdForHint} disabled={loadingAd}>
@@ -351,25 +402,9 @@ export default function GameScreen() {
             </Pressable>
           )}
         </View>
-
-        {/* Word list */}
-        <ScrollView style={styles.wordPanel} contentContainerStyle={styles.wordPanelContent}>
-          {puzzle.words.map((w) => {
-            const found = foundWords[w] !== undefined;
-            const color = found ? highlightColorAt(foundWords[w]) : undefined;
-            return (
-              <View
-                key={w}
-                style={[styles.wordChip, found && { backgroundColor: toCellBg(color!) }]}
-              >
-                <Text style={[styles.wordChipText, found && styles.wordChipFound]}>{w}</Text>
-              </View>
-            );
-          })}
-        </ScrollView>
       </View>
       <BannerSlot />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -381,21 +416,23 @@ function formatTime(sec: number): string {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
-  container: { flex: 1, paddingHorizontal: Spacing.md, paddingTop: Spacing.md },
+  container: { flex: 1, paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.xs },
   centerFill: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: Colors.background },
   errText: { color: Colors.textDark, fontSize: FontSize.lg, fontWeight: '700' },
   link: { color: Colors.blue, fontSize: FontSize.md, fontWeight: '700' },
+
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  backText: { color: Colors.blue, fontWeight: '800', fontSize: FontSize.md, width: 70 },
-  catTitle: { fontWeight: '900', color: Colors.textDark, fontSize: FontSize.md },
+  backText: { color: Colors.blue, fontWeight: '800', fontSize: FontSize.md, width: 60 },
+  catTitle: { flex: 1, textAlign: 'center', fontWeight: '900', color: Colors.textDark, fontSize: FontSize.md },
+
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: Spacing.md,
+    marginTop: Spacing.sm,
     marginBottom: Spacing.sm,
   },
-  statBox: { alignItems: 'flex-start', width: 70 },
+  statBox: { alignItems: 'flex-start', width: 84 },
   statLabel: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '800', letterSpacing: 1 },
   statValue: { fontSize: FontSize.xl, color: Colors.textDark, fontWeight: '900' },
   timerPill: {
@@ -410,40 +447,66 @@ const styles = StyleSheet.create({
   timerText: { fontSize: FontSize.lg, fontWeight: '900', color: Colors.textDark, fontVariant: ['tabular-nums'] },
   timerTextWarn: { color: '#c0182b' },
   hintBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: Colors.surface,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 5,
+    height: 40,
+    width: 84,
     justifyContent: 'center',
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.gridBorder,
   },
   hintBtnDisabled: { opacity: 0.4 },
-  hintGlyph: { fontSize: 22 },
-  hintBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
+  hintGlyph: { fontSize: 17 },
+  hintLabel: { fontSize: FontSize.xs, fontWeight: '900', color: Colors.textDark, letterSpacing: 0.5 },
+  hintCount: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: Colors.danger,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
   },
-  hintBadgeText: { color: '#fff', fontWeight: '900', fontSize: FontSize.xs },
-  gridWrap: {
-    aspectRatio: 1,
-    width: '100%',
+  hintCountText: { color: '#fff', fontWeight: '900', fontSize: FontSize.xs },
+
+  targetPanel: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.md,
-    padding: 2,
-    overflow: 'hidden',
-    ...(Colors ? {} : {}),
+    borderWidth: 1,
+    borderColor: Colors.gridBorder,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
-  gridRow: { flexDirection: 'row', flex: 1 },
+  targetHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 },
+  targetHeader: { fontSize: FontSize.xs, fontWeight: '900', color: Colors.textMuted, letterSpacing: 1 },
+  targetProgress: { fontSize: FontSize.xs, fontWeight: '800', color: Colors.blue },
+  targetScroll: { maxHeight: 96 },
+  targetContent: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  wordChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.gridBorder,
+  },
+  wordCheck: { fontSize: FontSize.sm, fontWeight: '900', color: Colors.success },
+  wordChipText: { fontSize: FontSize.sm, fontWeight: '800', color: Colors.textDark },
+  wordChipFound: { color: Colors.foundWord, textDecorationLine: 'line-through' },
+
+  gridArea: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 160 },
+  grid: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  gridRow: { flexDirection: 'row' },
   cell: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -454,32 +517,14 @@ const styles = StyleSheet.create({
   cellText: { fontWeight: '800', color: Colors.textDark },
   cellTextSelected: { color: '#fff' },
   hintOverlay: { backgroundColor: 'rgba(234,179,8,0.75)' },
-  progressRow: {
+
+  secondaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: Spacing.sm,
+    minHeight: 22,
   },
   progressText: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: '700' },
   adHint: { fontSize: FontSize.sm, color: Colors.orange, fontWeight: '900' },
-  wordPanel: {
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.sm,
-    maxHeight: 120,
-  },
-  wordPanelContent: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  wordChip: {
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: Colors.gridBorder,
-  },
-  wordChipText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textDark },
-  wordChipFound: { color: Colors.foundWord, textDecorationLine: 'line-through' },
 });
