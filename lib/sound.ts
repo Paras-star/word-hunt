@@ -22,7 +22,8 @@ export type SoundName =
   | 'rarity'
   | 'new_discovery'
   | 'duplicate'
-  | 'collection';
+  | 'collection'
+  | 'sparkle';
 
 const SOURCES: Record<SoundName, number> = {
   tap: require('../assets/sounds/tap.wav'),
@@ -43,7 +44,10 @@ const SOURCES: Record<SoundName, number> = {
   new_discovery: require('../assets/sounds/new_discovery.wav'),
   duplicate: require('../assets/sounds/duplicate.wav'),
   collection: require('../assets/sounds/collection.wav'),
+  sparkle: require('../assets/sounds/sparkle.wav'),
 };
+
+const MUSIC_SOURCE = require('../assets/sounds/music_ambient.wav');
 
 const players: Partial<Record<SoundName, AudioPlayer>> = {};
 let enabled = true;
@@ -77,14 +81,61 @@ export function playSound(name: SoundName): void {
       players[name] = player;
     }
     player.seekTo(0);
-    player.play();
+    const result = player.play() as unknown as Promise<void> | void;
+    if (result && typeof (result as Promise<void>).catch === 'function') {
+      (result as Promise<void>).catch(() => {});
+    }
   } catch {
     // Best-effort: ignore audio failures entirely.
   }
 }
 
+// ---- Soothing ambient background music ----
+
+let musicPlayer: AudioPlayer | null = null;
+let musicEnabled = true;
+
+export function setMusicEnabled(value: boolean) {
+  musicEnabled = value;
+  if (!value) stopMusic();
+}
+
+/** Starts the looping ambient pad at a low, relaxing volume. Idempotent. */
+export function startMusic(): void {
+  if (!musicEnabled) return;
+  ensureInit();
+  try {
+    if (!musicPlayer) {
+      musicPlayer = createAudioPlayer(MUSIC_SOURCE);
+      musicPlayer.loop = true;
+      musicPlayer.volume = 0.35;
+    }
+    const result = musicPlayer.play() as unknown as Promise<void> | void;
+    if (result && typeof (result as Promise<void>).catch === 'function') {
+      (result as Promise<void>).catch(() => {});
+    }
+  } catch {
+    // Best-effort.
+  }
+}
+
+/** Pauses the ambient music (kept for quick resume). */
+export function stopMusic(): void {
+  try {
+    musicPlayer?.pause();
+  } catch {
+    // ignore
+  }
+}
+
 /** Frees all cached players. */
 export function releaseSounds(): void {
+  try {
+    musicPlayer?.remove();
+  } catch {
+    // ignore
+  }
+  musicPlayer = null;
   (Object.keys(players) as SoundName[]).forEach((name) => {
     try {
       players[name]?.remove();

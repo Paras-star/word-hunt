@@ -12,7 +12,7 @@ import { isBonusWord } from '@/data/bonusWords';
 import { usePlayer } from '@/hooks/usePlayer';
 import { generatePuzzle } from '@/lib/puzzle';
 import { showRewardedAd, adsSupported } from '@/lib/ads';
-import { playSound } from '@/lib/sound';
+import { playSound, stopMusic } from '@/lib/sound';
 import { cellsSignature, lineBetween, posKey, wordFromCells } from '@/lib/wordSearch';
 import type { GameMode, GridPosition } from '@/types';
 
@@ -49,6 +49,11 @@ export default function GameScreen() {
   const size = puzzle?.size ?? 8;
   const cellSize = gridWidth > 0 ? gridWidth / size : 0;
   const timeLeft = Math.max(0, TIME_LIMIT - elapsed);
+
+  // Pause ambient music during focused puzzle solving.
+  useEffect(() => {
+    stopMusic();
+  }, []);
 
   // ---- Timer ----
   useEffect(() => {

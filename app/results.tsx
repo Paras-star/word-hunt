@@ -11,6 +11,7 @@ import { CATEGORIES, getCategory, getCategoryIndex } from '@/data/categories';
 import { getDumpling } from '@/data/dumplings';
 import { usePlayer } from '@/hooks/usePlayer';
 import { maybeShowInterstitial } from '@/lib/ads';
+import { startMusic } from '@/lib/sound';
 import type { GameMode } from '@/types';
 
 export default function ResultsScreen() {
@@ -43,6 +44,7 @@ export default function ResultsScreen() {
 
   const pop = useRef(new Animated.Value(0)).current;
   useEffect(() => {
+    startMusic();
     Animated.spring(pop, { toValue: 1, useNativeDriver: true, bounciness: 10, speed: 5 }).start();
   }, [pop]);
 

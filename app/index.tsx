@@ -9,6 +9,7 @@ import { Screen } from '@/components/Screen';
 import { Colors, FontSize, Spacing } from '@/constants/theme';
 import { getDumpling } from '@/data/dumplings';
 import { usePlayer } from '@/hooks/usePlayer';
+import { startMusic } from '@/lib/sound';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function HomeScreen() {
   const float = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    startMusic();
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1.06, duration: 700, useNativeDriver: true }),
